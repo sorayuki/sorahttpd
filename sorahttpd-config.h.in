@@ -1,0 +1,6 @@
+#ifndef SORAHTTPD_CONFIG_H_
+#define SORAHTTPD_CONFIG_H_
+
+#define EPOLL_MAX_FD_COUNT @EPOLL_MAX_FD_COUNT@
+
+#endif

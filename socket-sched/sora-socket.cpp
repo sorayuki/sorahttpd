@@ -2,6 +2,7 @@
 #include "sorahttpd-config.h"
 #include "utils/log.h"
 #include <memory>
+#include <vector>
 
 #include <sys/epoll.h>
 #include <arpa/inet.h>
@@ -12,14 +13,10 @@
 
 namespace Sora
 {
-    class SocketImpl : public Socket
-    {
-        friend class SocketService;
-    }
-
     class SocketServiceImpl : public SocketService
     {
         int epoll_fd_;
+        std::vector<struct epoll_event> epoll_result_events_;
 
         void Clean();
 
@@ -28,32 +25,28 @@ namespace Sora
         ~SocketServiceImpl();
 
         bool Init();
-        SocketServiceImpl* GetImpl() override;
-        void RunSocketService() override;
+
+        bool RegisterSocketEvent(SocketEventsDelegate* delegate) override;
+        bool UnregisterSocketEvent(SocketEventsDelegate* delegate) override;
+        bool RunOnce(int timeoutMs) override;
     };
 
 
     //------------------------------------
     // SocketService
 
-    SocketService::~SocketService()
-    {
-    }
-
-    int CreateSocketService(SocketService** pService)
+    SocketService* CreateSocketService()
     {
         std::unique_ptr<SocketServiceImpl> result( new SocketServiceImpl() );
         if (result->Init())
-        {
-            *pService = result.release();
-            return SOCKSERV_OK;
-        }
+            return result.release();
         else
-            return SOCKSERV_ERR;
+            return nullptr;
     }
 
     SocketServiceImpl::SocketServiceImpl()
         : epoll_fd_(-1)
+        , epoll_result_events_(EPOLL_MAX_FD_COUNT)
     {
     }
 
@@ -64,10 +57,12 @@ namespace Sora
     
     bool SocketServiceImpl::Init()
     {
+        Clean();
+        
         epoll_fd_ = epoll_create(EPOLL_MAX_FD_COUNT);
         if (epoll_fd_ < 0)
         {
-            ERROR_LOG() << "epoll_create failed. %s" << strerror(errno);
+            ERROR_LOG() << "epoll_create failed. " << strerror(errno);
             return false;
         }
 
@@ -83,11 +78,56 @@ namespace Sora
         }
     }
 
-    SocketServiceImpl* SocketServiceImpl::GetImpl()
+    bool SocketServiceImpl::RegisterSocketEvent(SocketEventsDelegate* delegate)
     {
-        return this;
+        struct epoll_event ev{};
+        if (delegate->req_events_ & SE_READ) ev.events |= EPOLLIN;
+        if (delegate->req_events_ & SE_WRITE) ev.events |= EPOLLOUT;
+        if (delegate->req_events_ & SE_ERROR) ev.events |= EPOLLERR;
+        ev.data.ptr = delegate;
+
+        int action = EPOLL_CTL_ADD;
+        for(;;)
+        {
+            int ret = epoll_ctl(epoll_fd_, action, delegate->socket_fd_, &ev);
+            if (ret == 0)
+                break;
+            if (errno == EINTR)
+                continue;
+            if (errno == EEXIST && action == EPOLL_CTL_ADD)
+            {
+                action = EPOLL_CTL_MOD;
+                continue;
+            }
+            
+            ERROR_LOG() << "epoll_ctl " << (action == EPOLL_CTL_ADD ? "add" : "mod") << " failed. " << strerror(errno);
+            return false;
+        }
+
+        return true;
     }
 
-    //------------------------------------
-    // Socket
+    bool SocketServiceImpl::UnregisterSocketEvent(SocketEventsDelegate* delegate)
+    {
+        for(;;)
+        {
+            int ret = epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, delegate->socket_fd_, 0);
+            if (ret == 0)
+                break;
+            if (errno == EINTR)
+                continue;
+            if (errno == ENOENT)
+                break;
+
+            ERROR_LOG() << "epoll_ctl del failed. " << strerror(errno);
+            return false;
+        }
+        return true;
+    }
+
+    bool SocketServiceImpl::RunOnce(int timeoutMs)
+    {
+        epoll_wait(epoll_fd_, epoll_result_events_.data(), EPOLL_MAX_FD_COUNT, timeoutMs);
+        return true;
+    }
 };

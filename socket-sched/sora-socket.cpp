@@ -26,8 +26,8 @@ namespace Sora
 
         bool Init();
 
-        bool RegisterSocketEvent(SocketEventsDelegate* delegate) override;
-        bool UnregisterSocketEvent(SocketEventsDelegate* delegate) override;
+        bool RegisterSocketEvent(SocketScaffold* delegate) override;
+        bool UnregisterSocketEvent(SocketScaffold* delegate) override;
         bool RunOnce(int timeoutMs) override;
     };
 
@@ -78,18 +78,25 @@ namespace Sora
         }
     }
 
-    bool SocketServiceImpl::RegisterSocketEvent(SocketEventsDelegate* delegate)
+    bool SocketServiceImpl::RegisterSocketEvent(SocketScaffold* socketScaffold)
     {
+        if ((socketScaffold->req_events_ & SE_READ) && (socketScaffold->req_events_ & SE_ACCEPT))
+        {
+            ERROR_LOG() << "RegisterSocketEvent: incompatible events.";
+            return false;
+        }
+
         struct epoll_event ev{};
-        if (delegate->req_events_ & SE_READ) ev.events |= EPOLLIN;
-        if (delegate->req_events_ & SE_WRITE) ev.events |= EPOLLOUT;
-        if (delegate->req_events_ & SE_ERROR) ev.events |= EPOLLERR;
-        ev.data.ptr = delegate;
+        if (socketScaffold->req_events_ & SE_ACCEPT) ev.events |= EPOLLIN;
+        if (socketScaffold->req_events_ & SE_READ) ev.events |= EPOLLIN;
+        if (socketScaffold->req_events_ & SE_WRITE) ev.events |= EPOLLOUT;
+        if (socketScaffold->req_events_ & SE_ERROR) ev.events |= EPOLLERR;
+        ev.data.ptr = socketScaffold;
 
         int action = EPOLL_CTL_ADD;
         for(;;)
         {
-            int ret = epoll_ctl(epoll_fd_, action, delegate->socket_fd_, &ev);
+            int ret = epoll_ctl(epoll_fd_, action, socketScaffold->socket_fd_, &ev);
             if (ret == 0)
                 break;
             if (errno == EINTR)
@@ -107,11 +114,11 @@ namespace Sora
         return true;
     }
 
-    bool SocketServiceImpl::UnregisterSocketEvent(SocketEventsDelegate* delegate)
+    bool SocketServiceImpl::UnregisterSocketEvent(SocketScaffold* socketScaffold)
     {
         for(;;)
         {
-            int ret = epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, delegate->socket_fd_, 0);
+            int ret = epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, socketScaffold->socket_fd_, 0);
             if (ret == 0)
                 break;
             if (errno == EINTR)
@@ -127,7 +134,36 @@ namespace Sora
 
     bool SocketServiceImpl::RunOnce(int timeoutMs)
     {
-        epoll_wait(epoll_fd_, epoll_result_events_.data(), EPOLL_MAX_FD_COUNT, timeoutMs);
+        int nr;
+        for (;;)
+        {
+            nr = epoll_wait(epoll_fd_, epoll_result_events_.data(), EPOLL_MAX_FD_COUNT, timeoutMs);
+            if (nr < 0)
+            {
+                if (errno == EINTR)
+                    continue;
+                ERROR_LOG() << "epoll_wait failed. " << strerror(errno);
+                return false;
+            }
+            else
+                break;
+        }
+
+        for(int i = 0; i < nr; ++i)
+        {
+            struct epoll_event* ev = &epoll_result_events_[i];
+            SocketScaffold* socketScaffold = static_cast<SocketScaffold*>(ev->data.ptr);
+
+            if ((socketScaffold->req_events_ & SE_ACCEPT) && (ev->events & EPOLLIN))
+                socketScaffold->OnAccept(this);
+            else if ((socketScaffold->req_events_ & SE_READ) && (ev->events & EPOLLIN))
+                socketScaffold->OnRecv(this);
+            else if ((socketScaffold->req_events_ & SE_WRITE) && (ev->events & EPOLLOUT))
+                socketScaffold->OnSend(this);
+            else if ((socketScaffold->req_events_ & SE_ERROR) && (ev->events & EPOLLERR))
+                socketScaffold->OnError(this);
+        }
+        
         return true;
     }
 };

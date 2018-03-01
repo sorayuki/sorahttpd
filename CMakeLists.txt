@@ -15,11 +15,16 @@ set (SOCKET_SCHED_SRCS
     socket-sched/sora-socket.cpp
 )
 
+set (HTTP_SRCS
+    http-parser/sora-http.cpp
+)
+
 set (UTILS_SRCS
     utils/log.cpp
 )
 
 add_executable(sorahttpd
     ${SOCKET_SCHED_SRCS}
+    ${HTTP_SRCS}
     ${UTILS_SRCS}
 )

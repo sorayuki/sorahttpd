@@ -6,19 +6,18 @@
 namespace Sora
 {
     class SocketService;
-    class SocketEventsDelegate
+    class SocketScaffold
     {
     public:
         int socket_fd_;
         int req_events_;
 
-        virtual ~SocketEventsDelegate() {}
-        virtual void OnAccept(int socket_fd, SocketService* service) = 0;
-        virtual void OnConnected(SocketService* service) = 0;
-        virtual void OnRecv(SocketService* service) = 0;
-        virtual void OnSend(SocketService* service) = 0;
-        virtual void OnDisconnect(SocketService* service) = 0;
-        virtual void OnError(SocketService* service) = 0;
+        virtual ~SocketScaffold() {}
+        virtual void OnAccept(SocketService* service) {}
+        virtual void OnConnected(SocketService* service) {}
+        virtual void OnRecv(SocketService* service) {}
+        virtual void OnSend(SocketService* service) {}
+        virtual void OnError(SocketService* service) {}
     };
 
     const int SE_ACCEPT = 0x1;
@@ -30,8 +29,8 @@ namespace Sora
     {
     public:
         virtual ~SocketService() {}
-        virtual bool RegisterSocketEvent(SocketEventsDelegate* delegate) = 0;
-        virtual bool UnregisterSocketEvent(SocketEventsDelegate* delegate) = 0;
+        virtual bool RegisterSocketEvent(SocketScaffold* socketScaffold) = 0;
+        virtual bool UnregisterSocketEvent(SocketScaffold* socketScaffold) = 0;
         virtual bool RunOnce(int timeoutMs) = 0;
     };
 

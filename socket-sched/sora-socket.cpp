@@ -166,4 +166,21 @@ namespace Sora
         
         return true;
     }
+
+
+
+    SocketScaffold::SocketScaffold()
+    {
+        socket_fd_ = -1;
+        req_events_ = 0;
+    }
+
+    SocketScaffold::~SocketScaffold()
+    {
+        if (socket_fd_ > 0)
+        {
+            shutdown(socket_fd_, SHUT_RDWR);
+            close(socket_fd_);
+        }
+    }
 };

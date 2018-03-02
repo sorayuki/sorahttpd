@@ -6,6 +6,7 @@ namespace Sora
 {
     LogOutput::~LogOutput()
     {
+        *this << std::endl;
         std::clog << str();
     }
 };

@@ -24,6 +24,7 @@ set (UTILS_SRCS
 )
 
 add_executable(sorahttpd
+    main.cpp
     ${SOCKET_SCHED_SRCS}
     ${HTTP_SRCS}
     ${UTILS_SRCS}

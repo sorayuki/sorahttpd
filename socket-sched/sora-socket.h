@@ -12,7 +12,8 @@ namespace Sora
         int socket_fd_;
         int req_events_;
 
-        virtual ~SocketScaffold() {}
+        SocketScaffold();
+        virtual ~SocketScaffold();
         virtual void OnAccept(SocketService* service) {}
         virtual void OnConnected(SocketService* service) {}
         virtual void OnRecv(SocketService* service) {}
